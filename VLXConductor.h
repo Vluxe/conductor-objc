@@ -9,12 +9,19 @@
 
 #import <Foundation/Foundation.h>
 
+typedef NS_ENUM(NSUInteger, VLXConOpCode) {
+    VLXConOpCodeWrite  =  2, //normal message to send to all clients
+    VLXConOpCodeInfo   =  3, //message not intend for the UI
+    VLXConOpCodeServer =  5, //message between just this client and the server
+    VLXConOpCodeInvite =  6 //message between just this client and the server
+};
+
 @interface VLXMessage : NSObject
 
 @property(nonatomic,copy)NSString *name; //only used in responses
 @property(nonatomic,copy)NSString *body;
 @property(nonatomic,copy)NSString *channelName;
-@property(nonatomic,strong)NSNumber *opcode;
+@property(nonatomic,assign)VLXConOpCode opcode;
 @property(nonatomic,strong)id additional;
 
 @end
@@ -22,13 +29,6 @@
 static NSString *kVLXAllMessages = @"*";
 
 @interface VLXConductor : NSObject
-
-typedef NS_ENUM(NSUInteger, VLXConOpCode) {
-    VLXConOpCodeWrite  =  2, //normal message to send to all clients
-    VLXConOpCodeInfo   =  3, //message not intend for the UI
-    VLXConOpCodeServer =  5, //message between just this client and the server
-    VLXConOpCodeInvite =  6 //message between just this client and the server
-};
 
 typedef void (^VLXConductorMessages)(VLXMessage *message);
 
@@ -79,12 +79,26 @@ typedef void (^VLXConductorMessages)(VLXMessage *message);
 -(void)serverUnbind:(id)observer;
 
 /**
- Send a message to channel.
+ Send a standard write message to channel.
  @param: body is the text to send in the body of the message
  @param: channel is the channelName to send the message to.
- @param: opcode is the code to intend the desired action of the message
  @param: additional is any additional values to send along with the core messages (this needs to be able to be serialized into JSON with the NSJSONSerializtion API)
  */
--(void)sendMessage:(NSString*)body channel:(NSString*)channelName opcode:(VLXConOpCode)code additional:(id)object;
+-(void)sendMessage:(NSString*)body channel:(NSString*)channelName additional:(id)object;
+
+/**
+ Send an info message to channel.
+ @param: body is the text to send in the body of the message
+ @param: channel is the channelName to send the message to.
+ @param: additional is any additional values to send along with the core messages (this needs to be able to be serialized into JSON with the NSJSONSerializtion API)
+ */
+-(void)sendInfo:(NSString*)body channel:(NSString*)channelName additional:(id)object;
+
+/**
+ Invite a user to channel.
+ @param: name is the username to send in the invite to
+ @param: channel is the channelName to send the message to.
+ */
+-(void)sendInvite:(NSString*)name channel:(NSString*)channelName;
 
 @end

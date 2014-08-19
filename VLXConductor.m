@@ -52,7 +52,7 @@
 {
     NSMutableArray *array = self.channels[channelName];
     if(!array) {
-        [self sendMessage:@"" channel:channelName opcode:1 additional:nil];
+        [self writeMessage:@"" channel:channelName opcode:1 additional:nil];
         array = [[NSMutableArray alloc] init];
         [self.channels setObject:array forKey:channelName];
     }
@@ -75,7 +75,7 @@
     NSMutableArray *array = self.channels[channelName];
     [array removeObject:obs];
     if(array.count == 0) {
-        [self sendMessage:@"" channel:channelName opcode:2 additional:nil];
+        [self writeMessage:@"" channel:channelName opcode:2 additional:nil];
     }
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -103,17 +103,32 @@
     [self.serverArray removeObject:obs];
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)sendMessage:(NSString*)body channel:(NSString*)channelName opcode:(VLXConOpCode)code additional:(id)object
+-(void)sendMessage:(NSString*)body channel:(NSString*)channelName additional:(id)object
+{
+    [self writeMessage:body channel:channelName opcode:VLXConOpCodeWrite additional:object];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)sendInfo:(NSString*)body channel:(NSString*)channelName additional:(id)object
+{
+    [self writeMessage:body channel:channelName opcode:VLXConOpCodeInfo additional:object];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)sendInvite:(NSString*)name channel:(NSString*)channelName
+{
+    [self writeMessage:name channel:channelName opcode:VLXConOpCodeInvite additional:nil];
+}
+/////////////////////////////////////////////////////////////////////////////
+#pragma - mark private methods
+/////////////////////////////////////////////////////////////////////////////
+-(void)writeMessage:(NSString*)body channel:(NSString*)channelName opcode:(VLXConOpCode)code additional:(id)object
 {
     VLXMessage *message = [VLXMessage new];
     message.body = body;
     message.channelName = channelName;
-    message.opcode = @(code);
+    message.opcode = code;
     message.additional = object;
     [self.socket writeString:[message toJSONString]];
 }
-/////////////////////////////////////////////////////////////////////////////
-#pragma - mark private methods
 /////////////////////////////////////////////////////////////////////////////
 -(VLXObserver*)findObs:(NSString*)channelName observer:(id)observer
 {
@@ -151,8 +166,8 @@
 -(void)websocket:(JFWebSocket*)socket didReceiveMessage:(NSString*)string
 {
     VLXMessage *message = [VLXMessage messageFromString:string];
-    if([message.opcode intValue] == VLXConOpCodeWrite || [message.opcode intValue] == VLXConOpCodeInfo ||
-       [message.opcode intValue] == VLXConOpCodeInvite) {
+    if(message.opcode == VLXConOpCodeWrite || message.opcode == VLXConOpCodeInfo ||
+       message.opcode == VLXConOpCodeInvite) {
         NSArray *array = self.channels[message.channelName];
         for(VLXObserver *obs in array) {
             obs.messages(message);
@@ -161,7 +176,7 @@
         for(VLXObserver *obs in array) {
             obs.messages(message);
         }
-    } else if([message.opcode intValue] == VLXConOpCodeServer) {
+    } else if(message.opcode == VLXConOpCodeServer) {
         for(VLXObserver *obs in self.serverArray) {
             obs.messages(message);
         }
@@ -202,7 +217,7 @@ static NSString *kAdditional = @"additional";
     message.name = dict[kName];
     message.channelName = dict[kChannelName];
     message.additional = dict[kAdditional];
-    message.opcode = dict[kOpCode];
+    message.opcode = [dict[kOpCode] intValue];
     return message;
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -213,7 +228,7 @@ static NSString *kAdditional = @"additional";
     [dict setObject:self.name forKey:kName];
     [dict setObject:self.channelName forKey:kChannelName];
     [dict setObject:self.additional forKey:kAdditional];
-    [dict setObject:self.opcode forKey:kOpCode];
+    [dict setObject:@(self.opcode) forKey:kOpCode];
     NSData *data = [NSJSONSerialization dataWithJSONObject:dict options:0 error:nil];
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
