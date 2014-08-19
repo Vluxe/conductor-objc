@@ -10,6 +10,13 @@
 #import "VLXConductor.h"
 #import "JFWebSocket.h"
 
+@interface VLXMessage ()
+
++(VLXMessage*)messageFromString:(NSString*)jsonString;
+-(NSString*)toJSONString;
+
+@end
+
 @interface VLXObserver : NSObject
 
 @property(nonatomic,strong)VLXConductorMessages messages;
@@ -21,6 +28,7 @@
 
 @property(nonatomic,strong)JFWebSocket *socket;
 @property(nonatomic,strong)NSMutableDictionary *channels;
+@property(nonatomic,strong)NSMutableArray *serverArray;
 
 @end
 
@@ -44,25 +52,88 @@
 {
     NSMutableArray *array = self.channels[channelName];
     if(!array) {
-        //send bind message
+        [self sendMessage:@"" channel:channelName opcode:1 additional:nil];
         array = [[NSMutableArray alloc] init];
         [self.channels setObject:array forKey:channelName];
     }
-    //unbind/check observer isn't in the array first...
-    VLXObserver *obs = [[VLXObserver alloc] init];
-    obs.observer = observer;
+    BOOL add = NO;
+    VLXObserver *obs = [self findObs:channelName observer:observer];
+    if(!obs) {
+        add = YES;
+        obs = [[VLXObserver alloc] init];
+        obs.observer = observer;
+    }
     obs.messages = messages;
-    [array addObject:obs];
+    if(add) {
+        [array addObject:obs];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)unbind:(NSString*)channelName observer:(id)observer
 {
-    
+    VLXObserver *obs = [self findObs:channelName observer:observer];
+    NSMutableArray *array = self.channels[channelName];
+    [array removeObject:obs];
+    if(array.count == 0) {
+        [self sendMessage:@"" channel:channelName opcode:2 additional:nil];
+    }
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)serverBind:(id)observer messages:(VLXConductorMessages)messages
+{
+    if(!self.serverArray) {
+        self.serverArray = [[NSMutableArray alloc] init];
+    }
+    VLXObserver *obs = [self findServerObs:observer];
+    BOOL add = NO;
+    if(!obs) {
+        add = YES;
+        obs = [[VLXObserver alloc] init];
+        obs.observer = observer;
+    }
+    obs.messages = messages;
+    if(add) {
+        [self.serverArray addObject:obs];
+    }
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)serverUnbind:(id)observer
+{
+    VLXObserver *obs = [self findServerObs:observer];
+    [self.serverArray removeObject:obs];
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)sendMessage:(NSString*)body channel:(NSString*)channelName opcode:(VLXConOpCode)code additional:(id)object
 {
-    //send a message to the server
+    VLXMessage *message = [VLXMessage new];
+    message.body = body;
+    message.channelName = channelName;
+    message.opcode = @(code);
+    message.additional = object;
+    [self.socket writeString:[message toJSONString]];
+}
+/////////////////////////////////////////////////////////////////////////////
+#pragma - mark private methods
+/////////////////////////////////////////////////////////////////////////////
+-(VLXObserver*)findObs:(NSString*)channelName observer:(id)observer
+{
+    NSMutableArray *array = self.channels[channelName];
+    for(VLXObserver *obs in array) {
+        if(obs.observer == observer) {
+            return obs;
+        }
+    }
+    return nil;
+}
+/////////////////////////////////////////////////////////////////////////////
+-(VLXObserver*)findServerObs:(id)observer
+{
+    for(VLXObserver *obs in self.serverArray) {
+        if(obs.observer == observer) {
+            return obs;
+        }
+    }
+    return nil;
 }
 /////////////////////////////////////////////////////////////////////////////
 #pragma - mark websocket delegate methods
@@ -79,7 +150,22 @@
 /////////////////////////////////////////////////////////////////////////////
 -(void)websocket:(JFWebSocket*)socket didReceiveMessage:(NSString*)string
 {
-    //convert string to JSON, then to message object and broadcast to the blocks
+    VLXMessage *message = [VLXMessage messageFromString:string];
+    if([message.opcode intValue] == VLXConOpCodeWrite || [message.opcode intValue] == VLXConOpCodeInfo ||
+       [message.opcode intValue] == VLXConOpCodeInvite) {
+        NSArray *array = self.channels[message.channelName];
+        for(VLXObserver *obs in array) {
+            obs.messages(message);
+        }
+        array = self.channels[kVLXAllMessages];
+        for(VLXObserver *obs in array) {
+            obs.messages(message);
+        }
+    } else if([message.opcode intValue] == VLXConOpCodeServer) {
+        for(VLXObserver *obs in self.serverArray) {
+            obs.messages(message);
+        }
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)websocket:(JFWebSocket*)socket didReceiveData:(NSData*)data
@@ -90,6 +176,46 @@
 -(void)websocketDidWriteError:(JFWebSocket*)socket error:(NSError*)error
 {
     //do we need to forward the errors along?
+}
+/////////////////////////////////////////////////////////////////////////////
+
+@end
+
+/////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+
+@implementation VLXMessage
+
+static NSString *kBody = @"body";
+static NSString *kName = @"name";
+static NSString *kChannelName = @"channelName";
+static NSString *kOpCode = @"opcode";
+static NSString *kAdditional = @"additional";
+
+/////////////////////////////////////////////////////////////////////////////
++(VLXMessage*)messageFromString:(NSString*)jsonString
+{
+    NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:[jsonString dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    VLXMessage *message = [VLXMessage new];
+    message.body = dict[kBody];
+    message.name = dict[kName];
+    message.channelName = dict[kChannelName];
+    message.additional = dict[kAdditional];
+    message.opcode = dict[kOpCode];
+    return message;
+}
+/////////////////////////////////////////////////////////////////////////////
+-(NSString*)toJSONString
+{
+    NSMutableDictionary *dict = [[NSMutableDictionary alloc] initWithCapacity:5];
+    [dict setObject:self.body forKey:kBody];
+    [dict setObject:self.name forKey:kName];
+    [dict setObject:self.channelName forKey:kChannelName];
+    [dict setObject:self.additional forKey:kAdditional];
+    [dict setObject:self.opcode forKey:kOpCode];
+    NSData *data = [NSJSONSerialization dataWithJSONObject:dict options:0 error:nil];
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
 /////////////////////////////////////////////////////////////////////////////
 

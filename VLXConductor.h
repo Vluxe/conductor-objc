@@ -9,15 +9,28 @@
 
 #import <Foundation/Foundation.h>
 
+@interface VLXMessage : NSObject
+
+@property(nonatomic,copy)NSString *name; //only used in responses
+@property(nonatomic,copy)NSString *body;
+@property(nonatomic,copy)NSString *channelName;
+@property(nonatomic,strong)NSNumber *opcode;
+@property(nonatomic,strong)id additional;
+
+@end
+
+static NSString *kVLXAllMessages = @"*";
+
 @interface VLXConductor : NSObject
 
 typedef NS_ENUM(NSUInteger, VLXConOpCode) {
     VLXConOpCodeWrite  =  2, //normal message to send to all clients
     VLXConOpCodeInfo   =  3, //message not intend for the UI
-    VLXConOpCodeServer =  5 //message between just this client and the server
+    VLXConOpCodeServer =  5, //message between just this client and the server
+    VLXConOpCodeInvite =  6 //message between just this client and the server
 };
 
-typedef void (^VLXConductorMessages)(id object);
+typedef void (^VLXConductorMessages)(VLXMessage *message);
 
 /**
  Bind to channel and listen to incoming messages.
@@ -47,6 +60,23 @@ typedef void (^VLXConductorMessages)(id object);
  @param: observer is the object that was listening for the messages (e.g. your view controller object)
  */
 -(void)unbind:(NSString*)channelName observer:(id)observer;
+
+/**
+ Bind which starts listen to incoming server opcode messages.
+ This has the same observer model as bind/unbind setup as channels.
+ Server messages don't use channels, so this is standalone
+ 
+ @param: observer is the object that is listening for the messages (e.g. your view controller object)
+ @param: messages is the block that will send message objecs as they come in.
+ */
+-(void)serverBind:(id)observer messages:(VLXConductorMessages)messages;
+
+/**
+ Unbind from listening to server messages.
+ See the @bind method for more information.
+ @param: observer is the object that was listening for the messages (e.g. your view controller object)
+ */
+-(void)serverUnbind:(id)observer;
 
 /**
  Send a message to channel.
