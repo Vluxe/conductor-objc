@@ -10,10 +10,10 @@
 #import <Foundation/Foundation.h>
 
 typedef NS_ENUM(NSUInteger, VLXConOpCode) {
-    VLXConOpCodeWrite  =  2, //normal message to send to all clients
-    VLXConOpCodeInfo   =  3, //message not intend for the UI
-    VLXConOpCodeServer =  5, //message between just this client and the server
-    VLXConOpCodeInvite =  6 //message between just this client and the server
+    VLXConOpCodeWrite  =  3, //normal message to send to all clients
+    VLXConOpCodeInfo   =  4, //message not intend for the UI
+    VLXConOpCodeServer =  7, //message between just this client and the server
+    VLXConOpCodeInvite =  8 //message between just this client and the server
 };
 
 @interface VLXMessage : NSObject

@@ -52,9 +52,9 @@
 {
     NSMutableArray *array = self.channels[channelName];
     if(!array) {
-        [self writeMessage:@"" channel:channelName opcode:1 additional:nil];
         array = [[NSMutableArray alloc] init];
         [self.channels setObject:array forKey:channelName];
+        [self writeMessage:@"" channel:channelName opcode:1 additional:nil];
     }
     BOOL add = NO;
     VLXObserver *obs = [self findObs:channelName observer:observer];
@@ -204,7 +204,7 @@
 
 static NSString *kBody = @"body";
 static NSString *kName = @"name";
-static NSString *kChannelName = @"channelName";
+static NSString *kChannelName = @"channel_name";
 static NSString *kOpCode = @"opcode";
 static NSString *kAdditional = @"additional";
 
@@ -224,10 +224,18 @@ static NSString *kAdditional = @"additional";
 -(NSString*)toJSONString
 {
     NSMutableDictionary *dict = [[NSMutableDictionary alloc] initWithCapacity:5];
-    [dict setObject:self.body forKey:kBody];
-    [dict setObject:self.name forKey:kName];
-    [dict setObject:self.channelName forKey:kChannelName];
-    [dict setObject:self.additional forKey:kAdditional];
+    if(self.body) {
+        [dict setObject:self.body forKey:kBody];
+    }
+    if(self.name) {
+        [dict setObject:self.name forKey:kName];
+    }
+    if(self.channelName) {
+        [dict setObject:self.channelName forKey:kChannelName];
+    }
+    if(self.additional) {
+        [dict setObject:self.additional forKey:kAdditional];
+    }
     [dict setObject:@(self.opcode) forKey:kOpCode];
     NSData *data = [NSJSONSerialization dataWithJSONObject:dict options:0 error:nil];
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
