@@ -54,7 +54,7 @@
     if(!array) {
         array = [[NSMutableArray alloc] init];
         [self.channels setObject:array forKey:channelName];
-        [self writeMessage:@"" channel:channelName opcode:1 additional:nil];
+        [self writeMessage:@"" channel:channelName opcode:VLXConOpCodeBind additional:nil];
     }
     BOOL add = NO;
     VLXObserver *obs = [self findObs:channelName observer:observer];
@@ -75,7 +75,7 @@
     NSMutableArray *array = self.channels[channelName];
     [array removeObject:obs];
     if(array.count == 0) {
-        [self writeMessage:@"" channel:channelName opcode:2 additional:nil];
+        [self writeMessage:@"" channel:channelName opcode:VLXConOpCodeUnBind additional:nil];
     }
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -116,6 +116,11 @@
 -(void)sendInvite:(NSString*)name channel:(NSString*)channelName
 {
     [self writeMessage:name channel:channelName opcode:VLXConOpCodeInvite additional:nil];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)sendServerMessage:(NSString*)body channel:(NSString*)channelName additional:(id)object
+{
+    [self writeMessage:body channel:channelName opcode:VLXConOpCodeServer additional:object];
 }
 /////////////////////////////////////////////////////////////////////////////
 #pragma - mark private methods
@@ -166,18 +171,17 @@
 -(void)websocket:(JFWebSocket*)socket didReceiveMessage:(NSString*)string
 {
     VLXMessage *message = [VLXMessage messageFromString:string];
-    if(message.opcode == VLXConOpCodeWrite || message.opcode == VLXConOpCodeInfo ||
-       message.opcode == VLXConOpCodeInvite) {
+    if(message.opcode == VLXConOpCodeServer) {
+        for(VLXObserver *obs in self.serverArray) {
+            obs.messages(message);
+        }
+    } else {
         NSArray *array = self.channels[message.channelName];
         for(VLXObserver *obs in array) {
             obs.messages(message);
         }
         array = self.channels[kVLXAllMessages];
         for(VLXObserver *obs in array) {
-            obs.messages(message);
-        }
-    } else if(message.opcode == VLXConOpCodeServer) {
-        for(VLXObserver *obs in self.serverArray) {
             obs.messages(message);
         }
     }
