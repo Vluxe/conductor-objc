@@ -8,7 +8,7 @@
 /////////////////////////////////////////////////////////////////////////////
 
 #import "VLXConductor.h"
-#import "JFWebSocket.h"
+#import "JFRWebSocket.h"
 
 @interface VLXMessage ()
 
@@ -24,11 +24,12 @@
 
 @end
 
-@interface VLXConductor ()<JFWebSocketDelegate>
+@interface VLXConductor ()<JFRWebSocketDelegate>
 
-@property(nonatomic,strong)JFWebSocket *socket;
+@property(nonatomic,strong)JFRWebSocket *socket;
 @property(nonatomic,strong)NSMutableDictionary *channels;
-@property(nonatomic,strong)NSMutableArray *serverArray;
+@property(nonatomic,strong)VLXConductorConnection connectionStatus;
+@property(nonatomic,strong)VLXConductorMessages serverMessages;
 
 @end
 
@@ -39,7 +40,7 @@
 {
     if(self = [super init])
     {
-        self.socket = [[JFWebSocket alloc] initWithURL:url];
+        self.socket = [[JFRWebSocket alloc] initWithURL:url protocols:@[@"chat",@"superchat"]];
         self.socket.delegate = self;
         [self.socket addHeader:authToken forKey:@"Token"];
         [self.socket connect];
@@ -48,59 +49,35 @@
     return self;
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)bind:(NSString*)channelName observer:(id)observer messages:(VLXConductorMessages)messages
+-(void)setAuthToken:(NSString*)token
 {
-    NSMutableArray *array = self.channels[channelName];
-    if(!array) {
-        array = [[NSMutableArray alloc] init];
-        [self.channels setObject:array forKey:channelName];
+    [self.socket addHeader:token forKey:@"Token"];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)bind:(NSString*)channelName messages:(VLXConductorMessages)messages
+{
+    [self.channels setObject:messages forKey:channelName];
+    if(![channelName isEqualToString:kVLXAllMessages]) {
         [self writeMessage:@"" channel:channelName opcode:VLXConOpCodeBind additional:nil];
-    }
-    BOOL add = NO;
-    VLXObserver *obs = [self findObs:channelName observer:observer];
-    if(!obs) {
-        add = YES;
-        obs = [[VLXObserver alloc] init];
-        obs.observer = observer;
-    }
-    obs.messages = messages;
-    if(add) {
-        [array addObject:obs];
     }
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)unbind:(NSString*)channelName observer:(id)observer
+-(void)unbind:(NSString*)channelName
 {
-    VLXObserver *obs = [self findObs:channelName observer:observer];
-    NSMutableArray *array = self.channels[channelName];
-    [array removeObject:obs];
-    if(array.count == 0) {
+    [self.channels removeObjectForKey:channelName];
+    if(![channelName isEqualToString:kVLXAllMessages]) {
         [self writeMessage:@"" channel:channelName opcode:VLXConOpCodeUnBind additional:nil];
     }
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)serverBind:(id)observer messages:(VLXConductorMessages)messages
+-(void)serverBind:(VLXConductorMessages)messages
 {
-    if(!self.serverArray) {
-        self.serverArray = [[NSMutableArray alloc] init];
-    }
-    VLXObserver *obs = [self findServerObs:observer];
-    BOOL add = NO;
-    if(!obs) {
-        add = YES;
-        obs = [[VLXObserver alloc] init];
-        obs.observer = observer;
-    }
-    obs.messages = messages;
-    if(add) {
-        [self.serverArray addObject:obs];
-    }
+    self.serverMessages = messages;
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)serverUnbind:(id)observer
+-(void)serverUnbind
 {
-    VLXObserver *obs = [self findServerObs:observer];
-    [self.serverArray removeObject:obs];
+    self.serverMessages = nil;
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)sendMessage:(NSString*)body channel:(NSString*)channelName additional:(id)object
@@ -113,14 +90,19 @@
     [self writeMessage:body channel:channelName opcode:VLXConOpCodeInfo additional:object];
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)sendInvite:(NSString*)name channel:(NSString*)channelName
+-(void)sendInvite:(NSString*)name channel:(NSString*)channelName additional:(id)object
 {
-    [self writeMessage:name channel:channelName opcode:VLXConOpCodeInvite additional:nil];
+    [self writeMessage:name channel:channelName opcode:VLXConOpCodeInvite additional:object];
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)sendServerMessage:(NSString*)body channel:(NSString*)channelName additional:(id)object
 {
     [self writeMessage:body channel:channelName opcode:VLXConOpCodeServer additional:object];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)connectionState:(VLXConductorConnection)connection
+{
+    self.connectionStatus = connection;
 }
 /////////////////////////////////////////////////////////////////////////////
 #pragma - mark private methods
@@ -135,66 +117,69 @@
     [self.socket writeString:[message toJSONString]];
 }
 /////////////////////////////////////////////////////////////////////////////
--(VLXObserver*)findObs:(NSString*)channelName observer:(id)observer
-{
-    NSMutableArray *array = self.channels[channelName];
-    for(VLXObserver *obs in array) {
-        if(obs.observer == observer) {
-            return obs;
-        }
-    }
-    return nil;
-}
-/////////////////////////////////////////////////////////////////////////////
--(VLXObserver*)findServerObs:(id)observer
-{
-    for(VLXObserver *obs in self.serverArray) {
-        if(obs.observer == observer) {
-            return obs;
-        }
-    }
-    return nil;
-}
-/////////////////////////////////////////////////////////////////////////////
 #pragma - mark websocket delegate methods
 /////////////////////////////////////////////////////////////////////////////
--(void)websocketDidConnect:(JFWebSocket*)socket
+-(void)websocketDidConnect:(JFRWebSocket*)socket
 {
-    //don't really need to do anything (expect maybe auto reconnect state stuff)
+    //NSLog(@"socket connected");
+    _isConnected = YES;
+    if(self.connectionStatus) {
+        self.connectionStatus(_isConnected);
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)websocketDidDisconnect:(JFWebSocket*)socket error:(NSError*)error
+-(void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error
 {
-    //auto reconnect stuff
+    //NSLog(@"socket disconnected");
+    _isConnected = NO;
+    if(self.connectionStatus) {
+        self.connectionStatus(_isConnected);
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)websocket:(JFWebSocket*)socket didReceiveMessage:(NSString*)string
+-(void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString*)string
 {
     VLXMessage *message = [VLXMessage messageFromString:string];
-    if(message.opcode == VLXConOpCodeServer) {
-        for(VLXObserver *obs in self.serverArray) {
-            obs.messages(message);
+    if(message.opcode == VLXConOpCodeServer || message.opcode == VLXConOpCodeInvite) {
+        if(self.serverMessages) {
+            self.serverMessages(message);
         }
     } else {
-        NSArray *array = self.channels[message.channelName];
-        for(VLXObserver *obs in array) {
-            obs.messages(message);
+        VLXConductorMessages callback = self.channels[message.channelName];
+        if(callback) {
+            callback(message);
         }
-        array = self.channels[kVLXAllMessages];
-        for(VLXObserver *obs in array) {
-            obs.messages(message);
+        callback = self.channels[kVLXAllMessages];
+        if(callback) {
+            callback(message);
         }
     }
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)websocket:(JFWebSocket*)socket didReceiveData:(NSData*)data
+-(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data
 {
     //nothing in conductor for binary right now
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)websocketDidWriteError:(JFWebSocket*)socket error:(NSError*)error
+-(void)websocketDidWriteError:(JFRWebSocket*)socket error:(NSError*)error
 {
     //do we need to forward the errors along?
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)connect
+{
+    if(!self.isConnected) {
+        [self.channels removeAllObjects];
+        [self.socket connect];
+    }
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)disconnect
+{
+    if(self.isConnected) {
+        [self.channels removeAllObjects];
+        [self.socket disconnect];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 

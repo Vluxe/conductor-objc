@@ -15,7 +15,7 @@ typedef NS_ENUM(NSUInteger, VLXConOpCode) {
     VLXConOpCodeWrite  =  3, //normal message to send to all clients
     VLXConOpCodeInfo   =  4, //message not intend for the UI
     VLXConOpCodeServer =  7, //message between just this client and the server
-    VLXConOpCodeInvite =  8 //message between just this client and the server
+    VLXConOpCodeInvite =  8  //Invite a user to a channel
 };
 
 @interface VLXMessage : NSObject
@@ -32,7 +32,13 @@ static NSString *kVLXAllMessages = @"*";
 
 @interface VLXConductor : NSObject
 
+/**
+ Returns the status if the client is connected to the server.
+ */
+@property(nonatomic,readonly,assign)BOOL isConnected;
+
 typedef void (^VLXConductorMessages)(VLXMessage *message);
+typedef void (^VLXConductorConnection)(BOOL isConnected);
 
 /**
  Bind to channel and listen to incoming messages.
@@ -43,42 +49,39 @@ typedef void (^VLXConductorMessages)(VLXMessage *message);
 -(instancetype)initWithURL:(NSURL*)url authToken:(NSString*)authToken;
 
 /**
- Bind to channel and listen to incoming messages. 
- The bind/unbind setup allows for multiple observers of channel messages
- to make getting the same message in multiple locations simple (e.g. a view controller and your app delegate).
- This will NOT send multiple bind messages and only bind on the first observer. The same also holds true for the unbind 
- and it will only send an unbind message once all observers have been removed.
- 
- @param: channelName is the name of the channel to bind to
- @param: observer is the object that is listening for the messages (e.g. your view controller object)
- @param: messages is the block that will send message objecs as they come in.
+ Set the authToken.
+ @param: token is the authToken to use.
  */
--(void)bind:(NSString*)channelName observer:(id)observer messages:(VLXConductorMessages)messages;
+-(void)setAuthToken:(NSString*)token;
 
 /**
- Unbind from the channel and stop listen for messages on it. 
+ Bind to channel and listen to incoming messages.
+ 
+ @param: channelName is the name of the channel to bind to
+ @param: messages is the block that will send message objecs as they come in.
+ */
+-(void)bind:(NSString*)channelName messages:(VLXConductorMessages)messages;
+
+/**
+ Unbind from the channel and stop listen for messages on it.
  See the @bind method for more information.
  @param: channelName is the name of the channel to unbind from.
- @param: observer is the object that was listening for the messages (e.g. your view controller object)
  */
--(void)unbind:(NSString*)channelName observer:(id)observer;
+-(void)unbind:(NSString*)channelName;
 
 /**
  Bind which starts listen to incoming server opcode messages.
- This has the same observer model as bind/unbind setup as channels.
  Server messages don't use channels, so this is standalone
  
- @param: observer is the object that is listening for the messages (e.g. your view controller object)
  @param: messages is the block that will send message objecs as they come in.
  */
--(void)serverBind:(id)observer messages:(VLXConductorMessages)messages;
+-(void)serverBind:(VLXConductorMessages)messages;
 
 /**
  Unbind from listening to server messages.
  See the @bind method for more information.
- @param: observer is the object that was listening for the messages (e.g. your view controller object)
  */
--(void)serverUnbind:(id)observer;
+-(void)serverUnbind;
 
 /**
  Send a standard write message to channel.
@@ -100,8 +103,9 @@ typedef void (^VLXConductorMessages)(VLXMessage *message);
  Invite a user to channel.
  @param: name is the username to send in the invite to
  @param: channel is the channelName to send the message to.
+ @param: additional is any additional values to send along with the core messages (this needs to be able to be serialized into JSON with the NSJSONSerializtion API)
  */
--(void)sendInvite:(NSString*)name channel:(NSString*)channelName;
+-(void)sendInvite:(NSString*)name channel:(NSString*)channelName additional:(id)object;
 
 /**
  Send an server message to channel.
@@ -110,5 +114,21 @@ typedef void (^VLXConductorMessages)(VLXMessage *message);
  @param: additional is any additional values to send along with the core messages (this needs to be able to be serialized into JSON with the NSJSONSerializtion API)
  */
 -(void)sendServerMessage:(NSString*)body channel:(NSString*)channelName additional:(id)object;
+
+/**
+ Notifies when connection state changes (disconnected or connected).
+ @param: connection is the block that will send yes or no depend on if connection state has changed.
+ */
+-(void)connectionState:(VLXConductorConnection)connection;
+
+/**
+ Connect to the server
+ */
+-(void)connect;
+
+/**
+ Disconnect to the server
+ */
+-(void)disconnect;
 
 @end
