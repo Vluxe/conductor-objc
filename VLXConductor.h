@@ -110,7 +110,7 @@ typedef void (^VLXConductorConnection)(BOOL isConnected);
 /**
  Send an server message to channel.
  @param: body is the text to send in the body of the message
- @param: channel is optional in this case. It is only used from contextal information
+ @param: channel is optional in this case. It is only used for contextual information
  @param: additional is any additional values to send along with the core messages (this needs to be able to be serialized into JSON with the NSJSONSerializtion API)
  */
 -(void)sendServerMessage:(NSString*)body channel:(NSString*)channelName additional:(id)object;
